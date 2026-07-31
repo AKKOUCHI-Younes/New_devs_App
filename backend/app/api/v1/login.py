@@ -143,8 +143,15 @@ async def login(request: LoginRequest):
                 (user.app_metadata and user.app_metadata.get("role") == "admin")
             )
             
-            # Resolve tenant ID
-            tenant_id = await TenantResolver.resolve_tenant_id(user_id=user.id, user_email=user.email)
+            # Tenant authorization comes only from server-controlled app metadata.
+            tenant_id = TenantResolver.resolve_tenant_from_user({
+                "app_metadata": getattr(user, "app_metadata", {}) or {},
+            })
+            if not tenant_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Tenant context is required",
+                )
             
             # Create JWT token
             user_data = {
@@ -152,6 +159,10 @@ async def login(request: LoginRequest):
                 "email": user.email,
                 "is_admin": is_admin,
                 "tenant_id": tenant_id,
+                "app_metadata": {
+                    **(getattr(user, "app_metadata", {}) or {}),
+                    "tenant_id": tenant_id,
+                },
                 "exp": datetime.utcnow() + timedelta(hours=24),
                 "aud": "authenticated"
             }

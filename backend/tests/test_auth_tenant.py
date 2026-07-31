@@ -8,6 +8,7 @@ from jose import jwt
 
 from app.config import settings
 from app.core import auth
+from app.core.tenant_resolver import TenantResolver
 
 
 class FakeResponse:
@@ -110,6 +111,25 @@ class AuthenticatedTenantSelectionTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(raised.exception.status_code, 403)
+
+    async def test_resolver_never_maps_an_email_to_a_default_tenant(self) -> None:
+        tenant_id = await TenantResolver.resolve_tenant_id(
+            user_id="unknown-user",
+            user_email="sunset@propertyflow.com",
+        )
+
+        self.assertIsNone(tenant_id)
+
+    async def test_resolver_ignores_user_editable_metadata_claim(self) -> None:
+        token = make_token(app_tenant=None, user_tenant="tenant-b")
+
+        tenant_id = await TenantResolver.resolve_tenant_id(
+            user_id="tenant-test-user",
+            user_email="tenant-test@example.com",
+            token=token,
+        )
+
+        self.assertIsNone(tenant_id)
 
     async def test_matching_app_metadata_and_active_membership_is_accepted(self) -> None:
         user = await self.authenticate(
