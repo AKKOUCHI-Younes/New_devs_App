@@ -186,7 +186,9 @@ export class SecureAPIClient {
         // Check if it's a valid JWT
         else if (token.includes('.') && token.split('.').length === 3) {
           const payload = JSON.parse(atob(token.split('.')[1]));
-          extractedTenantId = payload.user_metadata?.tenant_id || payload.tenant_id;
+          extractedTenantId =
+            payload.app_metadata?.tenant_id ||
+            payload.tenant_id;
         }
 
         if (extractedTenantId) {
@@ -224,7 +226,7 @@ export class SecureAPIClient {
       if (token) {
         const payload = JSON.parse(atob(token.split('.')[1]));
         // Use user sub (unique ID) + email as session key for isolation
-        const userSub = payload.sub;
+        const userSub = payload.sub || payload.id;
         const userEmail = payload.email;
 
         if (userSub && userEmail) {
@@ -243,9 +245,9 @@ export class SecureAPIClient {
    * Validate tenant ID format for security
    */
   private isValidTenantId(tenantId: string): boolean {
-    // Check for UUID format (basic validation)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    return typeof tenantId === 'string' && tenantId.length > 0 && uuidRegex.test(tenantId);
+    // Tenant IDs are opaque TEXT values in the backend schema, not necessarily UUIDs.
+    const tenantIdRegex = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+    return typeof tenantId === 'string' && tenantIdRegex.test(tenantId);
   }
 
   /**
@@ -1450,22 +1452,36 @@ export class SecureAPIClient {
 
   // ============= DASHBOARD API =============
   /**
-   * Get dashboard summary with optional simulation header
+   * Get properties available to the authenticated tenant.
    */
-  async getDashboardSummary(propertyId: string, options?: { simulatedTenant?: string, timestamp?: number }) {
+  async getDashboardProperties() {
+    return this.request<Array<{
+      id: string;
+      name: string;
+      timezone: string;
+      latest_period: string | null;
+    }>>('/api/v1/dashboard/properties');
+  }
+
+  /**
+   * Get a dashboard summary, optionally scoped to a reporting month.
+   */
+  async getDashboardSummary(propertyId: string, options?: { year?: number, month?: number }) {
     const queryParams = new URLSearchParams({ property_id: propertyId });
-    if (options?.timestamp) {
-      queryParams.append('_t', options.timestamp.toString());
+    if (options?.year !== undefined) {
+      queryParams.append('year', options.year.toString());
+    }
+    if (options?.month !== undefined) {
+      queryParams.append('month', options.month.toString());
     }
 
-    const requestOptions: RequestInit = {};
-    if (options?.simulatedTenant) {
-      requestOptions.headers = {
-        'X-Simulated-Tenant': options.simulatedTenant
-      };
-    }
-
-    return this.request<any>(`/api/v1/dashboard/summary?${queryParams}`, requestOptions);
+    return this.request<{
+      property_id: string;
+      total_revenue: number;
+      currency: string;
+      reservations_count: number;
+      period: string;
+    }>(`/api/v1/dashboard/summary?${queryParams}`);
   }
 
   async uploadCompanyLogo(logo_url: string) {
