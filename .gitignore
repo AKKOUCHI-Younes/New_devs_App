@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+.venv/
+
+# Install and build these from the lockfile; upstream currently tracks copies.
+frontend/node_modules/
+frontend/dist/

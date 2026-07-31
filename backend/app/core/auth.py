@@ -248,12 +248,22 @@ async def authenticate_request(
         logger.info(f"AUTH: User cities from users_city table: {user_cities}")
         logger.info(f"AUTH: Admin status: {is_admin} - city access will be determined by endpoint logic")
 
-        # Use the comprehensive tenant resolver
+        # Tenant identity comes from verified user metadata (or an unambiguous
+        # server-side membership), never from request headers or email mapping.
         logger.info(f"==================== TENANT ID EXTRACTION ====================")
         logger.info(f"User: {user.email} (ID: {user.id})")
 
-        # Use TenantResolver for comprehensive tenant resolution
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        tenant_id = TenantResolver.resolve_tenant_from_user({
+            "app_metadata": getattr(user, "app_metadata", {}) or {},
+            "user_metadata": getattr(user, "user_metadata", {}) or {},
+        })
+        if not tenant_id and len(tenant_ids) == 1:
+            tenant_id = tenant_ids[0]
+        if not tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tenant context is required",
+            )
 
         # If we found a tenant_id and it's not in the user's metadata, update it for next time
         current_tenant_in_metadata = None
@@ -508,9 +518,16 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
         
         logger.info(f"WS_AUTH: Final user cities after processing: {user_cities}")
 
-        # Use the comprehensive tenant resolver (same as regular auth)
         logger.info(f"WS_AUTH: Resolving tenant for user {user.email}")
-        tenant_id = await TenantResolver.resolve_tenant_id(token=token, user_id=user.id, user_email=user.email)
+        tenant_id = TenantResolver.resolve_tenant_from_user({
+            "app_metadata": getattr(user, "app_metadata", {}) or {},
+            "user_metadata": getattr(user, "user_metadata", {}) or {},
+        })
+        if not tenant_id and len(tenant_ids) == 1:
+            tenant_id = tenant_ids[0]
+        if not tenant_id:
+            logger.warning("WS_AUTH: Authenticated user has no tenant context")
+            return None
 
         auth_user = AuthenticatedUser(
             id=user.id,
