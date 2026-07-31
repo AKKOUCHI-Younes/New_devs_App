@@ -20,7 +20,7 @@ router = APIRouter()
 async def get_dashboard_summary(
     property_id: str,
     month: Optional[int] = Query(default=None, ge=1, le=12),
-    year: Optional[int] = Query(default=None, ge=1, le=9999),
+    year: Optional[int] = Query(default=None, ge=2, le=9998),
     currency: Optional[str] = Query(default=None, min_length=3, max_length=3, pattern="^[A-Za-z]{3}$"),
     current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -41,6 +41,8 @@ async def get_dashboard_summary(
     except PropertyNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Property not found")
     except MixedCurrenciesError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+    except (ValueError, OverflowError) as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
     except HTTPException:
         raise

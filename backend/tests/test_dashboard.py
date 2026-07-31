@@ -72,6 +72,24 @@ class DashboardRevenueTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.status_code, 403)
         calculator.assert_not_awaited()
 
+    async def test_invalid_reporting_boundary_is_a_validation_error(self) -> None:
+        calculator = AsyncMock(side_effect=ValueError("year must be between 2 and 9998"))
+        current_user = SimpleNamespace(tenant_id="tenant-a")
+
+        with (
+            patch.object(dashboard, "get_revenue_summary", calculator),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            await dashboard.get_dashboard_summary(
+                property_id="prop-001",
+                month=12,
+                year=9999,
+                currency="USD",
+                current_user=current_user,
+            )
+
+        self.assertEqual(raised.exception.status_code, 422)
+
 
 if __name__ == "__main__":
     unittest.main()

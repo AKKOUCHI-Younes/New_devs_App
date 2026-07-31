@@ -1,7 +1,7 @@
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from typing import Optional, List
+from typing import Any, List, Optional, Sequence
 from datetime import datetime
 import logging
 import hashlib
@@ -61,6 +61,29 @@ ADMIN_EMAILS = [
     "younes@gmail.com",
     "yazid@theflexliving.com",
 ]
+
+
+def resolve_authenticated_tenant(user: Any, active_tenant_ids: Sequence[str]) -> Optional[str]:
+    """Resolve tenant only from server-controlled identity and memberships.
+
+    Supabase ``user_metadata`` is user-editable and must never authorize tenant
+    access. ``app_metadata`` comes from the verified identity provider response;
+    when active memberships are available, the claim must agree with them.
+    """
+    app_metadata = getattr(user, "raw_app_metadata", None)
+    if not app_metadata:
+        app_metadata = getattr(user, "app_metadata", None)
+    claimed_tenant = app_metadata.get("tenant_id") if isinstance(app_metadata, dict) else None
+
+    memberships = list(dict.fromkeys(tenant_id for tenant_id in active_tenant_ids if tenant_id))
+    if memberships:
+        if claimed_tenant:
+            return claimed_tenant if claimed_tenant in memberships else None
+        return memberships[0] if len(memberships) == 1 else None
+
+    # Challenge-mode JWTs carry a signed app_metadata claim while the optional
+    # Supabase membership store is unavailable.
+    return claimed_tenant
 
 
 async def authenticate_request(
@@ -253,12 +276,7 @@ async def authenticate_request(
         logger.info(f"==================== TENANT ID EXTRACTION ====================")
         logger.info(f"User: {user.email} (ID: {user.id})")
 
-        tenant_id = TenantResolver.resolve_tenant_from_user({
-            "app_metadata": getattr(user, "app_metadata", {}) or {},
-            "user_metadata": getattr(user, "user_metadata", {}) or {},
-        })
-        if not tenant_id and len(tenant_ids) == 1:
-            tenant_id = tenant_ids[0]
+        tenant_id = resolve_authenticated_tenant(user, tenant_ids)
         if not tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -519,12 +537,7 @@ async def verify_token_ws(token: str) -> Optional[AuthenticatedUser]:
         logger.info(f"WS_AUTH: Final user cities after processing: {user_cities}")
 
         logger.info(f"WS_AUTH: Resolving tenant for user {user.email}")
-        tenant_id = TenantResolver.resolve_tenant_from_user({
-            "app_metadata": getattr(user, "app_metadata", {}) or {},
-            "user_metadata": getattr(user, "user_metadata", {}) or {},
-        })
-        if not tenant_id and len(tenant_ids) == 1:
-            tenant_id = tenant_ids[0]
+        tenant_id = resolve_authenticated_tenant(user, tenant_ids)
         if not tenant_id:
             logger.warning("WS_AUTH: Authenticated user has no tenant context")
             return None

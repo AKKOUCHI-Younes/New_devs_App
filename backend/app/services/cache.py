@@ -9,7 +9,11 @@ from urllib.parse import quote
 logger = logging.getLogger(__name__)
 
 # Initialize Redis client (typically configured centrally).
-redis_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+redis_client = redis.Redis.from_url(
+    os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+    socket_connect_timeout=1.0,
+    socket_timeout=1.0,
+)
 
 def revenue_cache_key(
     property_id: str,
@@ -41,10 +45,19 @@ async def get_revenue_summary(
     try:
         cached = await redis_client.get(cache_key)
         if cached:
-            return json.loads(cached)
-    except redis.RedisError as exc:
+            cached_summary = json.loads(cached)
+            required_fields = {"property_id", "tenant_id", "total", "currency", "count"}
+            if (
+                not isinstance(cached_summary, dict)
+                or not required_fields.issubset(cached_summary)
+                or cached_summary["property_id"] != property_id
+                or cached_summary["tenant_id"] != tenant_id
+            ):
+                raise ValueError("cached revenue payload does not match its scope")
+            return cached_summary
+    except (redis.RedisError, json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as exc:
         # Revenue remains available if the optional cache is temporarily down.
-        logger.warning("Revenue cache read failed: %s", type(exc).__name__)
+        logger.warning("Revenue cache read ignored: %s", type(exc).__name__)
     
     # Revenue calculation is delegated to the reservation service.
     from app.services.reservations import calculate_total_revenue

@@ -37,6 +37,11 @@ class MonthlyUtcBoundsTests(unittest.TestCase):
         self.assertEqual(start, datetime(2024, 11, 30, 23, 0, tzinfo=UTC))
         self.assertEqual(end, datetime(2024, 12, 31, 23, 0, tzinfo=UTC))
 
+    def test_rejects_years_that_cannot_safely_convert_across_utc(self) -> None:
+        for year in (1, 9999):
+            with self.subTest(year=year), self.assertRaises(ValueError):
+                monthly_utc_bounds(year, 12, "Europe/Paris")
+
 
 class MoneyRoundingTests(unittest.TestCase):
     def test_rounds_half_up_at_a_positive_half_cent(self) -> None:

@@ -10,6 +10,7 @@ class FakeRedis:
         self.values: dict[str, bytes] = {}
         self.get_calls: list[str] = []
         self.setex_calls: list[tuple[str, int, str]] = []
+        self.delete_calls: list[str] = []
 
     async def get(self, key: str) -> bytes | None:
         self.get_calls.append(key)
@@ -18,6 +19,10 @@ class FakeRedis:
     async def setex(self, key: str, ttl: int, value: str) -> None:
         self.setex_calls.append((key, ttl, value))
         self.values[key] = value.encode("utf-8")
+
+    async def delete(self, key: str) -> None:
+        self.delete_calls.append(key)
+        self.values.pop(key, None)
 
 
 def _calculated_summary(
@@ -143,6 +148,34 @@ class RevenueCacheIsolationTests(unittest.IsolatedAsyncioTestCase):
                 currency="USD",
             )
             self.assertEqual(calculator.await_count, len(dimensions))
+
+    async def test_malformed_cached_json_is_treated_as_a_cache_miss(self) -> None:
+        fake_redis = FakeRedis()
+        calculator = AsyncMock(side_effect=_calculated_summary)
+        cache_key = revenue_cache.revenue_cache_key(
+            "prop-001",
+            "tenant-a",
+            month=3,
+            year=2024,
+            currency="USD",
+        )
+        fake_redis.values[cache_key] = b"{malformed-json"
+
+        with (
+            patch.object(revenue_cache, "redis_client", fake_redis),
+            patch("app.services.reservations.calculate_total_revenue", calculator),
+        ):
+            result = await revenue_cache.get_revenue_summary(
+                "prop-001",
+                "tenant-a",
+                month=3,
+                year=2024,
+                currency="USD",
+            )
+
+        self.assertEqual((result["total"], result["count"]), ("2250.00", 4))
+        calculator.assert_awaited_once()
+        self.assertEqual(json.loads(fake_redis.values[cache_key]), result)
 
 
 if __name__ == "__main__":

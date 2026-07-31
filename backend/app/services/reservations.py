@@ -44,6 +44,10 @@ def monthly_utc_bounds(year: int, month: int, timezone_name: str) -> Tuple[datet
     """Return half-open UTC bounds for a calendar month in a property's timezone."""
     if not 1 <= month <= 12:
         raise ValueError("month must be between 1 and 12")
+    # UTC conversion can cross a year boundary, so reserve one year at each
+    # edge of Python's representable datetime range.
+    if not 2 <= year <= 9998:
+        raise ValueError("year must be between 2 and 9998")
 
     property_timezone = ZoneInfo(timezone_name)
     local_start = datetime(year, month, 1, tzinfo=property_timezone)
@@ -62,8 +66,8 @@ def _validate_period(month: Optional[int], year: Optional[int]) -> Optional[str]
         return None
     if not 1 <= month <= 12:
         raise ValueError("month must be between 1 and 12")
-    # Constructing the date also validates the supported year range.
-    datetime(year, month, 1)
+    if not 2 <= year <= 9998:
+        raise ValueError("year must be between 2 and 9998")
     return f"{year:04d}-{month:02d}"
 
 

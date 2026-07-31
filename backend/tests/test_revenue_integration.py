@@ -2,7 +2,7 @@ import os
 import unittest
 
 from app.core.database_pool import db_pool
-from app.services.reservations import calculate_total_revenue
+from app.services.reservations import PropertyNotFoundError, calculate_total_revenue
 
 
 RUN_DB_INTEGRATION = os.getenv("RUN_DB_INTEGRATION") == "1"
@@ -38,6 +38,16 @@ class SeededRevenueIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((ocean["total"], ocean["count"]), ("0.00", 0))
         self.assertEqual(sunset["tenant_id"], "tenant-a")
         self.assertEqual(ocean["tenant_id"], "tenant-b")
+
+    async def test_tenant_cannot_access_another_tenants_unique_property(self) -> None:
+        with self.assertRaises(PropertyNotFoundError):
+            await calculate_total_revenue(
+                "prop-002",
+                "tenant-b",
+                month=3,
+                year=2024,
+                currency="USD",
+            )
 
     async def test_seeded_totals_for_each_clients_properties(self) -> None:
         expected = {
